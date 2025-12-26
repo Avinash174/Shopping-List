@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
-import 'package:shopping_list/model/category.dart';
-import 'package:shopping_list/data/categories.dart';
 import 'package:http/http.dart' as http;
+import 'package:shopping_list/data/categories.dart';
+import 'package:shopping_list/model/category.dart';
 
 class NewItem extends StatefulWidget {
   const NewItem({super.key});
@@ -15,32 +13,27 @@ class NewItem extends StatefulWidget {
 
 class _NewItemState extends State<NewItem> {
   final _formKey = GlobalKey<FormState>();
+  bool _isSending = false;
 
   String _enteredName = '';
   int _enteredQuantity = 1;
   Categories _selectedCategory = Categories.vegetables;
 
-  void _resetForm() {
-    _formKey.currentState!.reset();
-    setState(() {
-      _enteredName = '';
-      _enteredQuantity = 1;
-      _selectedCategory = Categories.vegetables;
-    });
-  }
-
-  void _saveItem() async {
+  Future<void> _saveItem() async {
     if (!_formKey.currentState!.validate()) return;
 
     _formKey.currentState!.save();
+
+    setState(() {
+      _isSending = true;
+    });
 
     final url = Uri.https(
       'shopping-list-da658-default-rtdb.firebaseio.com',
       'items.json',
     );
-    log('URL: $url');
 
-    final response = await http.post(
+    await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
@@ -49,13 +42,10 @@ class _NewItemState extends State<NewItem> {
         'category': _selectedCategory.name,
       }),
     );
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    log(
-      'Name: $_enteredName, Quantity: $_enteredQuantity, Category: ${_selectedCategory.name}',
-    );
 
-    debugPrint('Response: ${response.statusCode}');
+    if (!mounted) return;
+
+    Navigator.of(context).pop(true); // 🔑 IMPORTANT
   }
 
   @override
@@ -71,17 +61,11 @@ class _NewItemState extends State<NewItem> {
               TextFormField(
                 maxLength: 50,
                 decoration: const InputDecoration(labelText: 'Item Name'),
-                validator: (value) {
-                  if (value == null ||
-                      value.trim().length <= 1 ||
-                      value.trim().length > 50) {
-                    return 'Enter a valid name';
-                  }
-                  return null;
-                },
+                validator: (value) => value == null || value.trim().length < 2
+                    ? 'Enter a valid name'
+                    : null,
                 onSaved: (value) => _enteredName = value!,
               ),
-
               Row(
                 children: [
                   Expanded(
@@ -89,42 +73,22 @@ class _NewItemState extends State<NewItem> {
                       initialValue: '1',
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Quantity'),
-                      validator: (value) {
-                        final qty = int.tryParse(value ?? '');
-                        if (qty == null || qty <= 0) {
-                          return 'Invalid quantity';
-                        }
-                        return null;
-                      },
+                      validator: (value) => int.tryParse(value ?? '') == null
+                          ? 'Invalid quantity'
+                          : null,
                       onSaved: (value) => _enteredQuantity = int.parse(value!),
                     ),
                   ),
-
                   const SizedBox(width: 16),
-
                   Expanded(
                     child: DropdownButtonFormField<Categories>(
                       value: _selectedCategory,
-                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Category'),
-                      items: Categories.values.map((key) {
-                        final cat = categories[key]!;
-                        return DropdownMenuItem<Categories>(
-                          value: key,
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 18,
-                                height: 18,
-                                decoration: BoxDecoration(
-                                  color: cat.color,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(cat.title),
-                            ],
-                          ),
+                      items: Categories.values.map((cat) {
+                        final category = categories[cat]!;
+                        return DropdownMenuItem(
+                          value: cat,
+                          child: Text(category.title),
                         );
                       }).toList(),
                       onChanged: (value) =>
@@ -133,16 +97,25 @@ class _NewItemState extends State<NewItem> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 20),
-
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(onPressed: _resetForm, child: const Text('Reset')),
+                  TextButton(
+                    onPressed: _isSending
+                        ? null
+                        : () => _formKey.currentState!.reset(),
+                    child: const Text('Reset'),
+                  ),
                   ElevatedButton(
-                    onPressed: _saveItem,
-                    child: const Text('Add Item'),
+                    onPressed: _isSending ? null : _saveItem,
+                    child: _isSending
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Add Item'),
                   ),
                 ],
               ),
